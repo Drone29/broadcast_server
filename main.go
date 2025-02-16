@@ -8,27 +8,27 @@ import (
 
 var port int = 1234
 
-func handleStart() {
+func handleStart() error {
+	fmt.Printf("Server listening on port %v\n", port)
 
+	return nil
 }
 
-func handleConnect() {
+func handleConnect() error {
+	fmt.Printf("Connecting to server on port %v\n", port)
 
+	return nil
 }
 
-func showHelp() {
-	fmt.Printf("Usage: %s <start|connect> [port]\n", os.Args[0])
-	fmt.Printf("\tstart - start server instance\n")
-	fmt.Printf("\tconnect - connect client to the server\n")
-	fmt.Printf("\tport - specify port for the server to listen to, or for a client to connect to [default %v]\n", port)
-}
-
-func parseCLIAndRun() {
+func parseCLI() func() error {
 	// panic handler
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Printf("%s\n", r)
-			showHelp()
+			fmt.Printf("Usage: %s <start|connect> [port]\n", os.Args[0])
+			fmt.Printf("\tstart - start server instance\n")
+			fmt.Printf("\tconnect - connect client to the server\n")
+			fmt.Printf("\tport - specify port for the server to listen to, or for a client to connect to [default %v]\n", port)
 		}
 	}()
 
@@ -43,19 +43,18 @@ func parseCLIAndRun() {
 		}
 		switch cmd {
 		case "start":
-			handleStart()
+			return handleStart
 		case "connect":
-			handleConnect()
+			return handleConnect
 		default:
 			panic(fmt.Sprintf("Unknown command: %s", cmd))
 		}
 	} else {
-		showHelp()
+		panic("No arguments provided")
 	}
 }
 
 func main() {
-
-	parseCLIAndRun()
-
+	cmd := parseCLI()
+	cmd()
 }
