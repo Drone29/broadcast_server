@@ -1,6 +1,7 @@
 package main
 
 import (
+	"broadcast-server/server"
 	"fmt"
 	"os"
 	"strconv"
@@ -8,19 +9,17 @@ import (
 
 var port int = 1234
 
-func handleStart() error {
+func handleStart() {
 	fmt.Printf("Server listening on port %v\n", port)
-
-	return nil
+	server.Start(port)
 }
 
-func handleConnect() error {
+func handleConnect() {
 	fmt.Printf("Connecting to server on port %v\n", port)
 
-	return nil
 }
 
-func parseCLI() func() error {
+func parseCLI() func() {
 	// panic handler
 	defer func() {
 		if r := recover(); r != nil {
