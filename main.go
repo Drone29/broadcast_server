@@ -15,7 +15,7 @@ func handleStart() {
 }
 
 func handleConnect() {
-	fmt.Printf("Connecting to server on port %v\n", port)
+	fmt.Printf("Connecting to server on port %v [NOT WORKING YET]\n", port)
 
 }
 
@@ -28,6 +28,7 @@ func parseCLI() func() {
 			fmt.Printf("\tstart - start server instance\n")
 			fmt.Printf("\tconnect - connect client to the server\n")
 			fmt.Printf("\tport - specify port for the server to listen to, or for a client to connect to [default %v]\n", port)
+			os.Exit(0)
 		}
 	}()
 

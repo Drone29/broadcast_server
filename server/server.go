@@ -72,7 +72,7 @@ func handleWSConnection(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		fmt.Printf("WS received from %s %v %v\n", conn.RemoteAddr(), msgType, msg)
+		fmt.Printf("WS received from %s %s\n", conn.RemoteAddr(), msg)
 
 		// handle received message
 		broadcastMessage(msgType, msg)
