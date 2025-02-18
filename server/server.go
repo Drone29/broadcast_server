@@ -32,33 +32,11 @@ func addClientToList(conn *websocket.Conn) {
 	clients[conn] = true
 }
 
-func sendToAll(msgType int, msg []byte) <-chan *websocket.Conn {
-	var wg sync.WaitGroup
-	clients_mtx.RLock()
-	// create a buffered channel for dead connections
-	deadConns := make(chan *websocket.Conn, len(clients))
-
-	for conn := range clients {
-		wg.Add(1) // increment semaphore
-		// execute in a goroutine
-		go func(c *websocket.Conn) {
-			defer wg.Done() // decrement semaphore
-			if err := c.WriteMessage(msgType, msg); err != nil {
-				fmt.Println("WS error sending message to:", c.RemoteAddr())
-				// append dead connection to buffered channel
-				deadConns <- c
-			}
-		}(conn)
-	}
-	clients_mtx.RUnlock() //do not hold the lock for too long
-
-	// wait until all messages are sent to all clients and close the channel
-	go func() {
-		wg.Wait()
-		close(deadConns)
-	}()
-
-	return deadConns
+func closeSingleConnection(conn *websocket.Conn) {
+	deadConns := make(chan *websocket.Conn, 1)
+	deadConns <- conn
+	close(deadConns)
+	cleanupDeadConnections(deadConns)
 }
 
 func cleanupDeadConnections(deadConns <-chan *websocket.Conn) {
@@ -72,9 +50,43 @@ func cleanupDeadConnections(deadConns <-chan *websocket.Conn) {
 	}
 }
 
-func broadcastMessage(msgType int, msg []byte) {
-	deadConns := sendToAll(msgType, msg)
-	cleanupDeadConnections(deadConns)
+func getClients() []*websocket.Conn {
+	clients_mtx.RLock()
+	defer clients_mtx.RUnlock()
+	// copy to a slice to ensure we're operating on a stable list of connections
+	connections := make([]*websocket.Conn, 0, len(clients))
+	for conn := range clients {
+		connections = append(connections, conn)
+	}
+	return connections
+}
+
+func broadcastMessage(msgType int, msg []byte) <-chan *websocket.Conn {
+	var wg sync.WaitGroup
+	connections := getClients()
+	// create a buffered channel for dead connections
+	deadConns := make(chan *websocket.Conn, len(connections))
+
+	for _, conn := range connections {
+		wg.Add(1) // increment semaphore
+		// execute in a goroutine
+		go func(c *websocket.Conn) {
+			defer wg.Done() // decrement semaphore
+			if err := c.WriteMessage(msgType, msg); err != nil {
+				fmt.Println("WS error sending message to:", c.RemoteAddr())
+				// append dead connection to buffered channel
+				deadConns <- c
+			}
+		}(conn)
+	}
+
+	// wait until all messages are sent to all clients and close the channel
+	go func() {
+		wg.Wait()
+		close(deadConns)
+	}()
+
+	return deadConns
 }
 
 // main handler
@@ -93,17 +105,15 @@ func handleWSConnection(w http.ResponseWriter, r *http.Request) {
 		msgType, msg, err := conn.ReadMessage()
 		if err != nil {
 			fmt.Println("WS client error:", conn.RemoteAddr(), err)
-			deadConns := make(chan *websocket.Conn, 1)
-			deadConns <- conn
-			close(deadConns)
-			cleanupDeadConnections(deadConns)
+			closeSingleConnection(conn)
 			break
 		}
 
 		fmt.Printf("WS received from %s %s\n", conn.RemoteAddr(), msg)
 
 		// handle received message
-		broadcastMessage(msgType, msg)
+		deadConns := broadcastMessage(msgType, msg)
+		cleanupDeadConnections(deadConns)
 	}
 }
 
