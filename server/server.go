@@ -67,12 +67,18 @@ func broadcastMessage(msgType int, msg []byte) <-chan *WSClient {
 	// create a buffered channel for dead connections
 	deadConns := make(chan *WSClient, len(connections))
 
+	message, err := PrepareMessage(msgType, msg)
+	if err != nil {
+		fmt.Println("WS error preparing message", err)
+		return deadConns
+	}
+
 	for _, conn := range connections {
 		wg.Add(1) // increment semaphore
 		// execute in a goroutine
 		go func(c *WSClient) {
 			defer wg.Done() // decrement semaphore
-			if err := c.WriteMessage(msgType, msg); err != nil {
+			if err := c.WritePreparedMessage(message); err != nil {
 				fmt.Println("WS error sending message to:", c.RemoteAddr())
 				// append dead connection to buffered channel
 				deadConns <- c

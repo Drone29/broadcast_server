@@ -19,10 +19,20 @@ func NewWSClient(conn *websocket.Conn) *WSClient {
 	}
 }
 
-func (c *WSClient) WriteMessage(messageType int, data []byte) error {
+func PrepareMessage(msgType int, msg []byte) (*websocket.PreparedMessage, error) {
+	return websocket.NewPreparedMessage(msgType, msg)
+}
+
+// func (c *WSClient) WriteMessage(messageType int, data []byte) error {
+// 	c.mtx.Lock()
+// 	defer c.mtx.Unlock()
+// 	return c.conn.WriteMessage(messageType, data)
+// }
+
+func (c *WSClient) WritePreparedMessage(pm *websocket.PreparedMessage) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
-	return c.conn.WriteMessage(messageType, data)
+	return c.conn.WritePreparedMessage(pm)
 }
 
 func (c *WSClient) ReadMessage() (messageType int, p []byte, err error) {
