@@ -10,14 +10,14 @@ import (
 
 var (
 	// list of unique clients
-	clients     map[*websocket.Conn]bool
+	clients     map[*WSClient]bool
 	clients_mtx = sync.RWMutex{}
 	ws_upgrader = websocket.Upgrader{}
 )
 
 // initialize variables
 func init() {
-	clients = make(map[*websocket.Conn]bool)
+	clients = make(map[*WSClient]bool)
 	ws_upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			//todo: check auth
@@ -26,20 +26,20 @@ func init() {
 	}
 }
 
-func addClientToList(conn *websocket.Conn) {
+func addClientToList(conn *WSClient) {
 	clients_mtx.Lock()
 	defer clients_mtx.Unlock()
 	clients[conn] = true
 }
 
-func closeSingleConnection(conn *websocket.Conn) {
-	deadConns := make(chan *websocket.Conn, 1)
+func closeSingleConnection(conn *WSClient) {
+	deadConns := make(chan *WSClient, 1)
 	deadConns <- conn
 	close(deadConns)
 	cleanupDeadConnections(deadConns)
 }
 
-func cleanupDeadConnections(deadConns <-chan *websocket.Conn) {
+func cleanupDeadConnections(deadConns <-chan *WSClient) {
 	clients_mtx.Lock()
 	defer clients_mtx.Unlock()
 
@@ -50,27 +50,27 @@ func cleanupDeadConnections(deadConns <-chan *websocket.Conn) {
 	}
 }
 
-func getClients() []*websocket.Conn {
+func getClients() []*WSClient {
 	clients_mtx.RLock()
 	defer clients_mtx.RUnlock()
 	// copy to a slice to ensure we're operating on a stable list of connections
-	connections := make([]*websocket.Conn, 0, len(clients))
+	connections := make([]*WSClient, 0, len(clients))
 	for conn := range clients {
 		connections = append(connections, conn)
 	}
 	return connections
 }
 
-func broadcastMessage(msgType int, msg []byte) <-chan *websocket.Conn {
+func broadcastMessage(msgType int, msg []byte) <-chan *WSClient {
 	var wg sync.WaitGroup
 	connections := getClients()
 	// create a buffered channel for dead connections
-	deadConns := make(chan *websocket.Conn, len(connections))
+	deadConns := make(chan *WSClient, len(connections))
 
 	for _, conn := range connections {
 		wg.Add(1) // increment semaphore
 		// execute in a goroutine
-		go func(c *websocket.Conn) {
+		go func(c *WSClient) {
 			defer wg.Done() // decrement semaphore
 			if err := c.WriteMessage(msgType, msg); err != nil {
 				fmt.Println("WS error sending message to:", c.RemoteAddr())
@@ -97,15 +97,17 @@ func handleWSConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	client := NewWSClient(conn)
+
 	fmt.Println("WS new client connected:", conn.RemoteAddr())
 	// store client in the set
-	addClientToList(conn)
+	addClientToList(client)
 
 	for {
 		msgType, msg, err := conn.ReadMessage()
 		if err != nil {
 			fmt.Println("WS client error:", conn.RemoteAddr(), err)
-			closeSingleConnection(conn)
+			closeSingleConnection(client)
 			break
 		}
 

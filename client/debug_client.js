@@ -14,7 +14,7 @@ ws.onmessage = (event) => {
 // Send a message every 5 seconds
 setInterval(() => {
     ws.send("Ping from client!");
-}, 5000);
+}, 500);
 
 ws.onclose = () => {
     console.log("Disconnected from server");
