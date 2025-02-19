@@ -50,8 +50,8 @@ func NewWSServer() *WSServer {
 
 func (s *WSServer) unregister_client(conn *websocket.Conn) {
 	if _, ok := s.clients[conn]; ok {
-		conn.Close()
 		delete(s.clients, conn)
+		conn.Close()
 	}
 }
 
@@ -85,9 +85,6 @@ func (s *WSServer) shutdown() {
 	for conn := range s.clients {
 		s.unregister_client(conn)
 	}
-	close(s.broadcast_q)
-	close(s.register_q)
-	close(s.unregister_q)
 }
 
 func (s *WSServer) run() {
@@ -122,8 +119,6 @@ func (s *WSServer) handleWSConnection(w http.ResponseWriter, r *http.Request) {
 		msgType, msg, err := conn.ReadMessage()
 		if err != nil {
 			fmt.Println("WS client error:", conn.RemoteAddr(), err)
-			// enqueue client to be unregistered
-			s.unregister_q <- conn
 			break
 		}
 
@@ -132,6 +127,8 @@ func (s *WSServer) handleWSConnection(w http.ResponseWriter, r *http.Request) {
 		// enqueue message for broadcasting
 		s.broadcast_q <- WSMessage{MsgType: msgType, Content: msg}
 	}
+	// enqueue client to be unregistered
+	s.unregister_q <- conn
 }
 
 // start server
