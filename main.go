@@ -4,7 +4,9 @@ import (
 	"broadcast-server/server"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 )
 
 var (
@@ -15,6 +17,7 @@ var (
 func init() {
 	port = 1234
 	quit = make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 }
 
 func handleStart() {
