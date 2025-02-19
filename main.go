@@ -7,11 +7,23 @@ import (
 	"strconv"
 )
 
-var port int = 1234
+var (
+	port int
+	quit chan os.Signal
+)
+
+func init() {
+	port = 1234
+	quit = make(chan os.Signal, 1)
+}
 
 func handleStart() {
 	fmt.Printf("Server listening on port %v\n", port)
-	server.Start(port)
+	server := server.Start(port)
+	// wait for terminate and shutdown gracefully
+	sgn := <-quit
+	fmt.Printf("Signal caught %s, terminating...\n", sgn)
+	server.Shutdown()
 }
 
 func handleConnect() {
