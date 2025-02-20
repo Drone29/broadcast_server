@@ -1,4 +1,4 @@
-package server
+package websocket_server
 
 import (
 	"fmt"
@@ -7,8 +7,6 @@ import (
 
 	"github.com/gorilla/websocket"
 )
-
-//TODO: move to separate module?
 
 const CLIENTS_BUFFER_SIZE = 10
 
@@ -68,7 +66,7 @@ func (s *WSServer) shutdown_gracefully() {
 	close(s.quit) //close channel to indicate we're done
 }
 
-func (s *WSServer) run() {
+func (s *WSServer) Start() {
 	for {
 		select {
 		case conn := <-s.register_q:
@@ -84,15 +82,7 @@ func (s *WSServer) run() {
 	}
 }
 
-// main handler
-func (s *WSServer) HandleConnection(w http.ResponseWriter, r *http.Request) {
-	conn, err := s.upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		fmt.Println("WS upgrade error:", err)
-		return
-	}
-
-	fmt.Println("WS new client connected:", conn.RemoteAddr())
+func (s *WSServer) handle_incoming_messages(conn *websocket.Conn) {
 	// enqueue new client
 	s.register_q <- conn
 
@@ -110,6 +100,18 @@ func (s *WSServer) HandleConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	// enqueue client to be unregistered
 	s.unregister_q <- conn
+}
+
+// main handler
+func (s *WSServer) HandleConnection(w http.ResponseWriter, r *http.Request) {
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		fmt.Println("WS upgrade error:", err)
+		return
+	}
+
+	fmt.Println("WS new client connected:", conn.RemoteAddr())
+	s.handle_incoming_messages(conn)
 }
 
 func (s *WSServer) Shutdown() error {

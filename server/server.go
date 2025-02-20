@@ -1,11 +1,14 @@
 package server
 
 import (
+	"broadcast-server/server/websocket_server"
 	"context"
 	"fmt"
 	"net/http"
 	"time"
 )
+
+type WSServer = websocket_server.WSServer
 
 type Server struct {
 	ws_server   *WSServer
@@ -14,7 +17,7 @@ type Server struct {
 
 // start server
 func Start(port int) Server {
-	ws_server := NewWSServer()
+	ws_server := websocket_server.NewWSServer()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", ws_server.HandleConnection)
 	http_server := &http.Server{
@@ -23,7 +26,7 @@ func Start(port int) Server {
 	}
 	fmt.Println("WS server started on port", port)
 	// run ws server
-	go ws_server.run()
+	go ws_server.Start()
 	// run http server in separate thread
 	go func() {
 		if err := http_server.ListenAndServe(); err != http.ErrServerClosed {
