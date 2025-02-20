@@ -91,6 +91,7 @@ func (s *WSServer) shutdown_gracefully() {
 		if err := conn.WriteControl(websocket.CloseMessage, close_msg, time.Now().Add(1*time.Second)); err != nil {
 			fmt.Printf("WS client %s close write error %v\n", conn.RemoteAddr(), err)
 		}
+		//TODO: interrupt handle_incoming_messages gracefully before closing connection
 		conn.Close()
 	}
 }
@@ -147,8 +148,8 @@ func (s *WSServer) handle_incoming_messages(conn *websocket.Conn) {
 
 	for {
 		msgType, msg, err := conn.ReadMessage()
-		if err != nil && err != websocket.ErrCloseSent {
-			fmt.Println("WS read error:", err)
+		if err != nil {
+			fmt.Println("WS read error", conn.RemoteAddr(), err)
 			break
 		}
 
