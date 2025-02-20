@@ -11,6 +11,7 @@ import (
 
 const CLIENTS_BUFFER_SIZE = 10
 const PING_TIMEOUT_S = 10
+const PING_INTERVAL_S = 5
 
 type WSMessage struct {
 	msg_type int
@@ -89,8 +90,28 @@ func (s *WSServer) shutdown_gracefully() {
 	}
 }
 
-func configure_client_deadline(conn *websocket.Conn) error {
+func extend_client_life(conn *websocket.Conn) error {
 	return conn.SetReadDeadline(time.Now().Add(PING_TIMEOUT_S * time.Second)) // set timeout
+}
+
+func (s *WSServer) run_ping_loop(conn *websocket.Conn, ping_stop chan struct{}) {
+	ticker := time.NewTicker(PING_INTERVAL_S * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			// send ping
+			s.client_msg_q <- WSClientMessage{
+				client: conn,
+				msg: WSMessage{
+					msg_type: websocket.PingMessage,
+				},
+			}
+		case <-ping_stop:
+			return
+		}
+	}
 }
 
 func (s *WSServer) configure_client(conn *websocket.Conn) {
@@ -104,15 +125,15 @@ func (s *WSServer) configure_client(conn *websocket.Conn) {
 				msg_type: websocket.PongMessage,
 			},
 		}
-		return nil
+		return extend_client_life(conn) // extend timeout
 	})
 	// configure pong
 	conn.SetPongHandler(func(appData string) error {
 		fmt.Printf("WS received pong %s from %s\n", appData, conn.RemoteAddr())
-		return configure_client_deadline(conn) // extend timeout
+		return extend_client_life(conn) // extend timeout
 	})
 
-	configure_client_deadline(conn) // set timeout for the first time
+	extend_client_life(conn) // set timeout for the first time
 }
 
 func (s *WSServer) handle_incoming_messages(conn *websocket.Conn) {
@@ -127,13 +148,13 @@ func (s *WSServer) handle_incoming_messages(conn *websocket.Conn) {
 		}
 
 		fmt.Printf("WS from %s received %s\n", conn.RemoteAddr(), msg)
+		extend_client_life(conn) // extend timeout
 
 		// enqueue message for broadcasting
 		s.broadcast_q <- WSMessage{msg_type: msgType, data: msg}
 	}
 	// enqueue client to be unregistered
 	s.unregister_q <- conn
-	s.active_clients.Done() // decrement semaphore
 }
 
 // main handler
@@ -147,7 +168,13 @@ func (s *WSServer) HandleConnection(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("WS new client connected:", conn.RemoteAddr())
 	s.configure_client(conn) // client config (timeout, ping/pong)
 	s.active_clients.Add(1)  // increment semaphore
-	go s.handle_incoming_messages(conn)
+	ping_stop := make(chan struct{})
+	go func() {
+		go s.run_ping_loop(conn, ping_stop) // ping loop
+		s.handle_incoming_messages(conn)    // message handler
+		close(ping_stop)                    // signal ping loop to stop
+		s.active_clients.Done()             // decrement semaphore
+	}()
 }
 
 func (s *WSServer) Shutdown() error {
