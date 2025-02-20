@@ -86,6 +86,11 @@ func (s *WSServer) send_client_msg(client_message WSClientMessage) error {
 func (s *WSServer) shutdown_gracefully() {
 	for conn := range s.clients {
 		fmt.Println("WS closing client", conn.RemoteAddr())
+		// send Close control msg to client
+		close_msg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "Bye")
+		if err := conn.WriteControl(websocket.CloseMessage, close_msg, time.Now().Add(1*time.Second)); err != nil {
+			fmt.Printf("WS client %s close write error %v\n", conn.RemoteAddr(), err)
+		}
 		conn.Close()
 	}
 }
