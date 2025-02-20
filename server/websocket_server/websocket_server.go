@@ -16,12 +16,13 @@ type WSMessage struct {
 }
 
 type WSServer struct {
-	clients      map[*websocket.Conn]struct{}
-	broadcast_q  chan WSMessage
-	register_q   chan *websocket.Conn
-	unregister_q chan *websocket.Conn
-	quit         chan struct{}
-	upgrader     websocket.Upgrader
+	clients        map[*websocket.Conn]struct{}
+	broadcast_q    chan WSMessage
+	register_q     chan *websocket.Conn
+	unregister_q   chan *websocket.Conn
+	quit           chan struct{}
+	upgrader       websocket.Upgrader
+	active_clients sync.WaitGroup
 }
 
 func (s *WSServer) unregister_client(conn *websocket.Conn) {
@@ -63,7 +64,6 @@ func (s *WSServer) shutdown_gracefully() {
 		fmt.Println("WS closing client", conn.RemoteAddr())
 		conn.Close()
 	}
-	close(s.quit) //close channel to indicate we're done
 }
 
 func (s *WSServer) Start() {
@@ -100,6 +100,7 @@ func (s *WSServer) handle_incoming_messages(conn *websocket.Conn) {
 	}
 	// enqueue client to be unregistered
 	s.unregister_q <- conn
+	s.active_clients.Done() // decrement semaphore
 }
 
 // main handler
@@ -111,14 +112,15 @@ func (s *WSServer) HandleConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Println("WS new client connected:", conn.RemoteAddr())
-	s.handle_incoming_messages(conn)
+	s.active_clients.Add(1) // increment semaphore
+	go s.handle_incoming_messages(conn)
 }
 
 func (s *WSServer) Shutdown() error {
 	// signal shutdown
 	s.quit <- struct{}{}
 	// wait until ws server terminates gracefully
-	<-s.quit
+	s.active_clients.Wait()
 	return nil
 }
 
