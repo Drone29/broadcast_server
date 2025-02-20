@@ -66,22 +66,6 @@ func (s *WSServer) shutdown_gracefully() {
 	}
 }
 
-func (s *WSServer) Start() {
-	for {
-		select {
-		case conn := <-s.register_q:
-			s.clients[conn] = struct{}{}
-		case conn := <-s.unregister_q:
-			s.unregister_client(conn)
-		case msg := <-s.broadcast_q:
-			s.broadcast_message(msg)
-		case <-s.quit:
-			s.shutdown_gracefully()
-			return
-		}
-	}
-}
-
 func (s *WSServer) handle_incoming_messages(conn *websocket.Conn) {
 	// enqueue new client
 	s.register_q <- conn
@@ -122,6 +106,22 @@ func (s *WSServer) Shutdown() error {
 	// wait until ws server terminates gracefully
 	s.active_clients.Wait()
 	return nil
+}
+
+func (s *WSServer) Start() {
+	for {
+		select {
+		case conn := <-s.register_q:
+			s.clients[conn] = struct{}{}
+		case conn := <-s.unregister_q:
+			s.unregister_client(conn)
+		case msg := <-s.broadcast_q:
+			s.broadcast_message(msg)
+		case <-s.quit:
+			s.shutdown_gracefully()
+			return
+		}
+	}
 }
 
 func NewWSServer() *WSServer {
