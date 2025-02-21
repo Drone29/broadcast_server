@@ -7,31 +7,42 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/mcuadros/go-defaults" //defaults
 )
 
-const CLIENTS_BUFFER_SIZE = 10
-const PING_TIMEOUT_S = 10
-const PING_INTERVAL_S = 5
-
-type WSMessage struct {
+type wsMessage struct {
 	msg_type int
 	data     []byte
 }
 
-type WSClientMessage struct {
+type wsClientMessage struct {
 	client *websocket.Conn
-	msg    WSMessage
+	msg    wsMessage
+}
+
+type WSServerConfig struct {
+	// number of expected clients. Affects the size of message queue
+	ExpectedClients int `default:"10"`
+	// time after which the client is perceived dead if there was no messages from it
+	PingTimeout time.Duration `default:"10s"`
+	// time interval for server to sent ping frames to client.SHould be less than PingTimeout
+	PingInterval time.Duration `default:"5s"`
+	// time allotted for client to respond to Close frame upon graceful shutdown
+	CloseGracePeriod time.Duration `default:"10ms"`
+	// time allotted for server to deliver Close frame to client
+	CloseGraceWriteTimeout time.Duration `default:"10ms"`
 }
 
 type WSServer struct {
 	clients        map[*websocket.Conn]struct{}
-	broadcast_q    chan WSMessage
-	client_msg_q   chan WSClientMessage
+	broadcast_q    chan wsMessage
+	client_msg_q   chan wsClientMessage
 	register_q     chan *websocket.Conn
 	unregister_q   chan *websocket.Conn
 	quit           chan struct{}
 	upgrader       websocket.Upgrader
 	active_clients sync.WaitGroup
+	config         *WSServerConfig
 }
 
 func (s *WSServer) register_new_client(conn *websocket.Conn) {
@@ -46,7 +57,7 @@ func (s *WSServer) unregister_client(conn *websocket.Conn) {
 	}
 }
 
-func (s *WSServer) broadcast_message(msg WSMessage) error {
+func (s *WSServer) broadcast_message(msg wsMessage) error {
 	message, err := websocket.NewPreparedMessage(msg.msg_type, msg.data)
 	if err != nil {
 		fmt.Println("WS error preparing message", err)
@@ -72,7 +83,7 @@ func (s *WSServer) broadcast_message(msg WSMessage) error {
 	return nil
 }
 
-func (s *WSServer) send_client_msg(client_message WSClientMessage) error {
+func (s *WSServer) send_client_msg(client_message wsClientMessage) error {
 	conn := client_message.client
 	msg := client_message.msg
 	if err := conn.WriteMessage(msg.msg_type, msg.data); err != nil {
@@ -88,29 +99,30 @@ func (s *WSServer) shutdown_gracefully() {
 		fmt.Println("WS closing client", conn.RemoteAddr())
 		// send Close control msg to client
 		close_msg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "Bye")
-		if err := conn.WriteControl(websocket.CloseMessage, close_msg, time.Now().Add(1*time.Second)); err != nil {
+		if err := conn.WriteControl(websocket.CloseMessage, close_msg, time.Now().Add(s.config.CloseGraceWriteTimeout)); err != nil {
 			fmt.Printf("WS client %s close write error %v\n", conn.RemoteAddr(), err)
 		}
-		//TODO: interrupt handle_incoming_messages gracefully before closing connection
+		// give handle_incoming_messages some time to break from loop
+		time.Sleep(s.config.CloseGracePeriod)
 		conn.Close()
 	}
 }
 
-func extend_client_life(conn *websocket.Conn) error {
-	return conn.SetReadDeadline(time.Now().Add(PING_TIMEOUT_S * time.Second)) // set timeout
+func (s *WSServer) extend_client_life(conn *websocket.Conn) error {
+	return conn.SetReadDeadline(time.Now().Add(s.config.PingTimeout)) // set timeout
 }
 
 func (s *WSServer) run_ping_loop(conn *websocket.Conn, ping_stop chan struct{}) {
-	ticker := time.NewTicker(PING_INTERVAL_S * time.Second)
+	ticker := time.NewTicker(s.config.PingInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
 			// send ping
-			s.client_msg_q <- WSClientMessage{
+			s.client_msg_q <- wsClientMessage{
 				client: conn,
-				msg: WSMessage{
+				msg: wsMessage{
 					msg_type: websocket.PingMessage,
 				},
 			}
@@ -125,21 +137,21 @@ func (s *WSServer) configure_client(conn *websocket.Conn) {
 	conn.SetPingHandler(func(appData string) error {
 		fmt.Printf("WS received ping %s from %s\n", appData, conn.RemoteAddr())
 		// send pong back
-		s.client_msg_q <- WSClientMessage{
+		s.client_msg_q <- wsClientMessage{
 			client: conn,
-			msg: WSMessage{
+			msg: wsMessage{
 				msg_type: websocket.PongMessage,
 			},
 		}
-		return extend_client_life(conn) // extend timeout
+		return s.extend_client_life(conn) // extend timeout
 	})
 	// configure pong
 	conn.SetPongHandler(func(appData string) error {
 		fmt.Printf("WS received pong %s from %s\n", appData, conn.RemoteAddr())
-		return extend_client_life(conn) // extend timeout
+		return s.extend_client_life(conn) // extend timeout
 	})
 
-	extend_client_life(conn) // set timeout for the first time
+	s.extend_client_life(conn) // set timeout for the first time
 }
 
 func (s *WSServer) handle_incoming_messages(conn *websocket.Conn) {
@@ -149,15 +161,17 @@ func (s *WSServer) handle_incoming_messages(conn *websocket.Conn) {
 	for {
 		msgType, msg, err := conn.ReadMessage()
 		if err != nil {
-			fmt.Println("WS read error", conn.RemoteAddr(), err)
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+				fmt.Println("WS read error", conn.RemoteAddr(), err)
+			}
 			break
 		}
 
 		fmt.Printf("WS from %s received %s\n", conn.RemoteAddr(), msg)
-		extend_client_life(conn) // extend timeout
+		s.extend_client_life(conn) // extend timeout
 
 		// enqueue message for broadcasting
-		s.broadcast_q <- WSMessage{msg_type: msgType, data: msg}
+		s.broadcast_q <- wsMessage{msg_type: msgType, data: msg}
 	}
 	// enqueue client to be unregistered
 	s.unregister_q <- conn
@@ -214,13 +228,17 @@ func (s *WSServer) Start() {
 	}
 }
 
-func NewWSServer() *WSServer {
+// create new WSServer instance
+func NewWSServer(config *WSServerConfig) *WSServer {
+	if config.PingTimeout < config.PingInterval {
+		panic("ping timeout < ping interval")
+	}
 	return &WSServer{
 		clients:      make(map[*websocket.Conn]struct{}),
-		broadcast_q:  make(chan WSMessage, CLIENTS_BUFFER_SIZE),
-		client_msg_q: make(chan WSClientMessage, CLIENTS_BUFFER_SIZE),
-		register_q:   make(chan *websocket.Conn, CLIENTS_BUFFER_SIZE),
-		unregister_q: make(chan *websocket.Conn, CLIENTS_BUFFER_SIZE),
+		broadcast_q:  make(chan wsMessage, config.ExpectedClients),
+		client_msg_q: make(chan wsClientMessage, config.ExpectedClients),
+		register_q:   make(chan *websocket.Conn, config.ExpectedClients),
+		unregister_q: make(chan *websocket.Conn, config.ExpectedClients),
 		quit:         make(chan struct{}),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
@@ -228,5 +246,13 @@ func NewWSServer() *WSServer {
 				return true // allow all connections
 			},
 		},
+		config: config,
 	}
+}
+
+// create new WSServerConfig with defaults
+func NewWSServerConfig() *WSServerConfig {
+	cfg := &WSServerConfig{}
+	defaults.SetDefaults(cfg)
+	return cfg
 }

@@ -17,7 +17,8 @@ type Server struct {
 
 // start server
 func Start(port int) Server {
-	ws_server := websocket_server.NewWSServer()
+	ws_cfg := websocket_server.NewWSServerConfig()
+	ws_server := websocket_server.NewWSServer(ws_cfg)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", ws_server.HandleConnection)
 	http_server := &http.Server{
