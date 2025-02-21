@@ -27,10 +27,10 @@ type WSServerConfig struct {
 	PingTimeout time.Duration `default:"10s"`
 	// time interval for server to sent ping frames to client.SHould be less than PingTimeout
 	PingInterval time.Duration `default:"5s"`
-	// time allotted for client to respond to Close frame upon graceful shutdown
-	CloseGracePeriod time.Duration `default:"10ms"`
 	// time allotted for server to deliver Close frame to client
 	CloseGraceWriteTimeout time.Duration `default:"10ms"`
+	// total time allotted for graceful shutdown, excluding CloseGraceWriteTimeout
+	CloseGracePeriod time.Duration `default:"10ms"`
 }
 
 type WSServer struct {
@@ -103,7 +103,7 @@ func (s *WSServer) shutdown_gracefully() {
 			fmt.Printf("WS client %s close write error %v\n", conn.RemoteAddr(), err)
 		}
 		// give handle_incoming_messages some time to break from loop
-		time.Sleep(s.config.CloseGracePeriod)
+		time.Sleep(s.config.CloseGracePeriod / time.Duration(len(s.clients)))
 		conn.Close()
 	}
 }
