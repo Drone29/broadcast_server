@@ -161,9 +161,7 @@ func (s *WSServer) handle_incoming_messages(conn *websocket.Conn) {
 	for {
 		msgType, msg, err := conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-				fmt.Println("WS read error", conn.RemoteAddr(), err)
-			}
+			fmt.Println("WS client disconnect", conn.RemoteAddr(), err)
 			break
 		}
 
