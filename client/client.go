@@ -73,16 +73,7 @@ func (c *Client) handleMessages() {
 		select {
 		case msg := <-c.msg_rx_q:
 			//print received message to stdout
-			switch msg.msg_type {
-			case websocket.TextMessage:
-				fmt.Printf("Received message: %s\n", string(msg.data))
-			case websocket.PingMessage:
-				fmt.Printf("Received Ping\n")
-			case websocket.PongMessage:
-				fmt.Printf("Received Pong\n")
-			default:
-				fmt.Printf("Unknown message received: %d %s\n", msg.msg_type, msg.data)
-			}
+			fmt.Printf("Received message: %s\n", string(msg.data))
 		case msg := <-c.msg_tx_q:
 			// send message from stdin to server
 			if err := c.conn.WriteMessage(msg.msg_type, msg.data); err != nil {
