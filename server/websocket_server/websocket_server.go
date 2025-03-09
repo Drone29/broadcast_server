@@ -143,6 +143,7 @@ func (s *WSServer) configure_client(conn *websocket.Conn) {
 			client: conn,
 			msg: wsMessage{
 				msg_type: websocket.PongMessage,
+				data:     []byte(appData),
 			},
 		}
 		return s.extend_client_life(conn) // extend timeout
@@ -238,6 +239,7 @@ func NewWSServer(config *WSServerConfig) *WSServer {
 	}
 
 	upgrader := websocket.Upgrader{}
+	// debug mode, allow all clients
 	if config.DebugMode {
 		upgrader.CheckOrigin = func(r *http.Request) bool {
 			return true // allow all connections
