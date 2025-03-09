@@ -1,6 +1,7 @@
 package main
 
 import (
+	"broadcast-server/client"
 	"broadcast-server/server"
 	"fmt"
 	"os"
@@ -35,8 +36,12 @@ func handleStart() {
 }
 
 func handleConnect() {
-	fmt.Printf("Connecting to server on port %v [NOT WORKING YET]\n", port)
-
+	fmt.Printf("Connecting to server on port %v\n", port)
+	client := client.Connect(fmt.Sprintf("ws://localhost:%d/ws", port))
+	// wait for terminate and shutdown gracefully
+	sgn := <-quit
+	fmt.Printf("Signal caught %s, terminating...\n", sgn)
+	client.Disconnect()
 }
 
 func parseCLI() func() {
