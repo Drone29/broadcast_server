@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+const graceful_timeout = time.Millisecond * 10
 
 type wsMessage struct {
 	msg_type int
@@ -26,7 +29,9 @@ func (c *Client) receiveMessages() {
 		// read message
 		msg_type, msg, err := c.conn.ReadMessage()
 		if err != nil {
-			fmt.Println("WS reading error", c.conn.RemoteAddr(), err)
+			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				fmt.Println("WS reading error", c.conn.RemoteAddr(), err)
+			}
 			close(c.msg_rx_q) // close channel and exit
 			return
 		} else {
@@ -82,7 +87,14 @@ func (c *Client) handleMessages() {
 				}
 			}
 		case <-c.quit:
-			c.conn.Close()
+			close_msg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "Bye")
+			if err := c.conn.WriteControl(websocket.CloseMessage, close_msg, time.Now().Add(graceful_timeout)); err != nil {
+				fmt.Printf("WS client %s close write error %v\n", c.conn.RemoteAddr(), err)
+			} else {
+				//graceful exit, wait for server to respond
+				time.Sleep(graceful_timeout)
+			}
+			close(c.quit)
 			return
 		}
 	}
@@ -104,6 +116,8 @@ func Connect(url string) Client {
 }
 
 func (c *Client) Disconnect() {
-	close(c.quit) //signal shutdown
+	c.quit <- struct{}{} //signal shutdown
 	fmt.Println("Disconnecting WS client...")
+	<-c.quit
+	c.conn.Close()
 }
