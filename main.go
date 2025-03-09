@@ -10,19 +10,24 @@ import (
 )
 
 var (
-	port int
-	quit chan os.Signal
+	port       int
+	quit       chan os.Signal
+	debug_mode bool
 )
 
 func init() {
 	port = 1234
 	quit = make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	debug_mode = os.Getenv("DEBUG_MODE") == "true"
 }
 
 func handleStart() {
 	fmt.Printf("Server listening on port %v\n", port)
-	server := server.Start(port)
+	server := server.Start(server.ServerCfg{
+		Port:      port,
+		DebugMode: debug_mode,
+	})
 	// wait for terminate and shutdown gracefully
 	sgn := <-quit
 	fmt.Printf("Signal caught %s, terminating...\n", sgn)

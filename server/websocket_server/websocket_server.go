@@ -31,6 +31,8 @@ type WSServerConfig struct {
 	CloseGraceWriteTimeout time.Duration `default:"10ms"`
 	// total time allotted for graceful shutdown, excluding CloseGraceWriteTimeout
 	CloseGracePeriod time.Duration `default:"10ms"`
+	// debug mode
+	DebugMode bool
 }
 
 type WSServer struct {
@@ -204,6 +206,9 @@ func (s *WSServer) Shutdown() error {
 }
 
 func (s *WSServer) Start() {
+	if s.config.DebugMode {
+		fmt.Println("Running in debug mode")
+	}
 	for {
 		select {
 		case conn := <-s.register_q:
@@ -231,6 +236,14 @@ func NewWSServer(config *WSServerConfig) *WSServer {
 	if config.PingTimeout < config.PingInterval {
 		panic("ping timeout < ping interval")
 	}
+
+	upgrader := websocket.Upgrader{}
+	if config.DebugMode {
+		upgrader.CheckOrigin = func(r *http.Request) bool {
+			return true // allow all connections
+		}
+	}
+
 	return &WSServer{
 		clients:      make(map[*websocket.Conn]struct{}),
 		broadcast_q:  make(chan wsMessage, config.ExpectedClients),
@@ -238,13 +251,8 @@ func NewWSServer(config *WSServerConfig) *WSServer {
 		register_q:   make(chan *websocket.Conn, config.ExpectedClients),
 		unregister_q: make(chan *websocket.Conn, config.ExpectedClients),
 		quit:         make(chan struct{}),
-		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				//todo: check auth
-				return true // allow all connections
-			},
-		},
-		config: config,
+		upgrader:     upgrader,
+		config:       config,
 	}
 }
 

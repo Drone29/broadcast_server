@@ -10,22 +10,28 @@ import (
 
 type WSServer = websocket_server.WSServer
 
+type ServerCfg struct {
+	Port      int
+	DebugMode bool
+}
+
 type Server struct {
 	ws_server   *WSServer
 	http_server *http.Server
 }
 
 // start server
-func Start(port int) Server {
+func Start(cfg ServerCfg) Server {
 	ws_cfg := websocket_server.NewWSServerConfig()
+	ws_cfg.DebugMode = cfg.DebugMode
 	ws_server := websocket_server.NewWSServer(ws_cfg)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", ws_server.HandleConnection)
 	http_server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
+		Addr:    fmt.Sprintf(":%d", cfg.Port),
 		Handler: mux,
 	}
-	fmt.Println("WS server started on port", port)
+	fmt.Println("WS server started on port", cfg.Port)
 	// run ws server
 	go ws_server.Start()
 	// run http server in separate thread
