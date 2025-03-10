@@ -115,7 +115,7 @@ func Connect(url string) Client {
 	return client
 }
 
-func (c *Client) Disconnect() {
+func (c *Client) Shutdown() {
 	c.quit <- struct{}{} //signal shutdown
 	fmt.Println("Disconnecting WS client...")
 	<-c.quit

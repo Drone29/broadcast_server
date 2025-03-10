@@ -41,7 +41,7 @@ func handleConnect() {
 	// wait for terminate and shutdown gracefully
 	sgn := <-quit
 	fmt.Printf("Signal caught %s, terminating...\n", sgn)
-	client.Disconnect()
+	client.Shutdown()
 }
 
 func parseCLI() func() {
