@@ -52,7 +52,7 @@ func connectClient() Graceful {
 	return &client
 }
 
-func parseCLI() func() Graceful {
+func parseCLIAndStart() Graceful {
 	// panic handler
 	defer func() {
 		if r := recover(); r != nil {
@@ -76,9 +76,9 @@ func parseCLI() func() Graceful {
 		}
 		switch cmd {
 		case "start":
-			return startServer
+			return startServer()
 		case "connect":
-			return connectClient
+			return connectClient()
 		default:
 			panic(fmt.Sprintf("Unknown command: %s", cmd))
 		}
@@ -88,7 +88,6 @@ func parseCLI() func() Graceful {
 }
 
 func main() {
-	launch := parseCLI()
-	graceful_instance := launch()
-	waitForSignalAndShutdown(graceful_instance)
+	ws_instance := parseCLIAndStart() // server or client instance
+	waitForSignalAndShutdown(ws_instance)
 }
