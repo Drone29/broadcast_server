@@ -88,6 +88,11 @@ func parseCLIAndStart() Graceful {
 }
 
 func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("panic: %s\n", r)
+		}
+	}()
 	ws_instance := parseCLIAndStart() // server or client instance
 	waitForSignalAndShutdown(ws_instance)
 }
