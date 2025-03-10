@@ -16,6 +16,11 @@ var (
 	debug_mode bool
 )
 
+// provides common interface for both server and client graceful shutdown
+type Graceful interface {
+	Shutdown()
+}
+
 func init() {
 	port = 1234
 	quit = make(chan os.Signal, 1)
@@ -23,28 +28,31 @@ func init() {
 	debug_mode = os.Getenv("DEBUG_MODE") == "true"
 }
 
-func handleStart() {
+func waitForSignalAndShutdown(x Graceful) {
+	// wait for terminate and shutdown gracefully
+	sgn := <-quit
+	fmt.Printf("Signal caught %s, terminating...\n", sgn)
+	x.Shutdown()
+}
+
+// launch server
+func startServer() Graceful {
 	fmt.Printf("Server listening on port %v\n", port)
 	server := server.Start(server.ServerCfg{
 		Port:      port,
 		DebugMode: debug_mode,
 	})
-	// wait for terminate and shutdown gracefully
-	sgn := <-quit
-	fmt.Printf("Signal caught %s, terminating...\n", sgn)
-	server.Shutdown()
+	return &server
 }
 
-func handleConnect() {
+// launch client
+func connectClient() Graceful {
 	fmt.Printf("Connecting to server on port %v\n", port)
 	client := client.Connect(fmt.Sprintf("ws://localhost:%d/ws", port))
-	// wait for terminate and shutdown gracefully
-	sgn := <-quit
-	fmt.Printf("Signal caught %s, terminating...\n", sgn)
-	client.Shutdown()
+	return &client
 }
 
-func parseCLI() func() {
+func parseCLI() func() Graceful {
 	// panic handler
 	defer func() {
 		if r := recover(); r != nil {
@@ -68,9 +76,9 @@ func parseCLI() func() {
 		}
 		switch cmd {
 		case "start":
-			return handleStart
+			return startServer
 		case "connect":
-			return handleConnect
+			return connectClient
 		default:
 			panic(fmt.Sprintf("Unknown command: %s", cmd))
 		}
@@ -80,6 +88,7 @@ func parseCLI() func() {
 }
 
 func main() {
-	cmd := parseCLI()
-	cmd()
+	launch := parseCLI()
+	graceful_instance := launch()
+	waitForSignalAndShutdown(graceful_instance)
 }
